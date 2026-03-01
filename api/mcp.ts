@@ -1,70 +1,51 @@
 /**
- * Vercel Edge Function — Streamable HTTP transport
+ * Vercel Serverless Function — Node.js Streamable HTTP transport
  *
  * 各リクエストごとにサーバー + トランスポートを新規作成（ステートレス）
- * Edge Runtime でSSEストリーミングをネイティブサポート
  */
 
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from '../src/server.js';
 
-export const config = { runtime: 'edge' };
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, mcp-session-id, Last-Event-ID, mcp-protocol-version',
+  'Access-Control-Expose-Headers': 'mcp-session-id, mcp-protocol-version',
+};
 
-export default async function handler(request: Request): Promise<Response> {
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  // CORSヘッダーを設定
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(key, value);
+  }
+
   // CORS preflight
-  if (request.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders(),
-    });
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
   }
 
   try {
-    // リクエストごとに新しいサーバー + トランスポートを作成（ステートレスモード）
-    const transport = new WebStandardStreamableHTTPServerTransport({
+    const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
     });
 
     const server = createServer();
     await server.connect(transport);
 
-    const response = await transport.handleRequest(request);
-
-    // CORSヘッダーを追加
-    const headers = new Headers(response.headers);
-    for (const [key, value] of Object.entries(corsHeaders())) {
-      headers.set(key, value);
-    }
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+    await transport.handleRequest(req, res);
   } catch (error) {
     console.error('MCP handler error:', error);
-    return new Response(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        error: { code: -32603, message: 'Internal server error' },
-        id: null,
-      }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders(),
-        },
-      }
-    );
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+    }
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: 'Internal server error' },
+      id: null,
+    }));
   }
-}
-
-function corsHeaders(): Record<string, string> {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, mcp-session-id, Last-Event-ID, mcp-protocol-version',
-    'Access-Control-Expose-Headers': 'mcp-session-id, mcp-protocol-version',
-  };
 }

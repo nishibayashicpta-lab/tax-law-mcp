@@ -11,7 +11,7 @@ export function createServer(): McpServer {
   const server = new McpServer(
     {
       name: 'tax-law-mcp',
-      version: '0.4.1',
+      version: '0.5.0',
     },
     {
       instructions: `日本の税法（法令・通達・裁決事例）の原文を取得するMCPサーバーです。
@@ -25,7 +25,10 @@ export function createServer(): McpServer {
 
 ## 仮説→検証→修正サイクル
 1. 仮説: 知識から関連しそうな法令・条文・通達を特定する
-2. 取得: get_law / get_tsutatsu 等で原文を取得する（必ず複数の根拠を取得すること）
+2. 取得（並行して実行すること）:
+   a. 本サーバーのツール（get_law / get_tsutatsu 等）で原文を取得する
+   b. WebSearchで関連する通達・判例・裁決事例の番号や名称を検索する
+   ※ 必ず複数の根拠を取得すること
 3. 検証: 取得した原文だけで結論が出せるか検証する。不足があれば追加取得する
 4. 結論: 条文・通達に基づく結論を述べる
 
@@ -41,6 +44,8 @@ export function createServer(): McpServer {
 ## ツール呼び出しが失敗した場合
 - エラーで取得できなかった場合、別のキーワードや番号で再試行すること
 - list_tsutatsu で目次を確認して正しい番号を探すこと
+- 本サーバーのツールで2回空振りした場合は、WebSearchで通達名・番号を特定し、特定できた情報で本サーバーのツールを再試行すること
+- WebSearchで特定した情報もWebFetchで原文を取得し、本サーバーのツールの結果と照合すること
 - 取得失敗を放置して結論を述べてはいけない`,
     },
   );
